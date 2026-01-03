@@ -3,6 +3,12 @@ import traceback
 import subprocess
 import json
 from pathlib import Path
+import re
+
+ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+
+def strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE.sub("", text)
 
 try:
     from fastmcp import FastMCP
@@ -15,7 +21,7 @@ except Exception as e:
 mcp = FastMCP("run-api-test-server")
 
 # Path to your Java project
-PROJECT_DIR = Path("/home/abhijit/projects/java-api-demo")
+PROJECT_DIR = Path("/home/abhijit/IdeaProjects/api-tests")
 
 @mcp.tool(name="run_api_sanity_tests")
 def run_maven_tests():
@@ -38,22 +44,34 @@ def run_maven_tests():
             cwd=PROJECT_DIR
             
         )
+
+        clean_stdout = strip_ansi(result.stdout)
         
         # Prepare the response
         response = {
             "return_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr
+            "api_result": extract_api_result(result.stdout),
+            "stderr": result.stderr,
+            "raw_logs": clean_stdout
         }
 
     except Exception as e:
         response = {
             "return_code": -1,
-            "stdout": "",
-            "stderr": str(e)
+            "api_result": None,
+            "stderr": str(e),
+            "raw_logs": clean_stdout
         }
 
     return response  # Optional, FastMCP may use this internally
+
+def extract_api_result(stdout: str) -> dict | None:
+    for line in stdout.splitlines():
+        if line.startswith("API_RESULT::"):
+            payload = line[len("API_RESULT::"):]
+            return json.loads(payload)
+
+    return None
 
 # Start the MCP server
 if __name__ == "__main__":
