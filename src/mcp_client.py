@@ -1,41 +1,46 @@
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+import asyncio
+from typing import Any, Dict
 
 
-def mcp_test_executer():
-    import asyncio
+class MCPClient:
+    def __init__(
+        self,
+        command: str = ".venv/bin/python",
+        args: list[str] = ["src/mcp_server.py"],
+    ):
+        self.server_params = StdioServerParameters(
+            command=command,
+            args=args,
+        )
 
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(_mcp_test_executer_async())
-    else:
-        return loop.run_until_complete(_mcp_test_executer_async())
-    
+    async def _run_tool_async(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any] | None = None,
+    ) -> Any:
+        arguments = arguments or {}
 
-async def _mcp_test_executer_async():
-    # 1. Define how to connect to the server
-    server_params = StdioServerParameters(
-        command=".venv/bin/python",
-        args=["src/mcp_server.py"]
-    )
-    
-    # 2. Establish the core protocol session
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            
-            # 3. DIRECT CALL (No LLM involved)
-            result = await session.call_tool("run_api_sanity_tests", arguments={})
-            
-            return {"test_results": result.content}
+        async with stdio_client(self.server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, arguments=arguments)
+                return result.content
 
-
-
-
-
-    
-if __name__ == "__main__":
-    import asyncio
-    test_results = asyncio.run(mcp_test_executer())
-    print(test_results)
+    def run_tool(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any] | None = None,
+    ) -> Any:
+        """
+        Safe sync wrapper (works inside or outside event loop)
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self._run_tool_async(tool_name, arguments))
+        else:
+            return loop.run_until_complete(
+                self._run_tool_async(tool_name, arguments)
+            )

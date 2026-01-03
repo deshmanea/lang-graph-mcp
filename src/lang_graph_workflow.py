@@ -2,10 +2,12 @@ from langgraph.graph import StateGraph
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph
-from mcp_client import mcp_test_executer
 from utils import parse_mcp_result
 from langchain_ollama import ChatOllama
 from analysis_category import FailureAnalysis
+from mcp_client import MCPClient
+
+mcp = MCPClient()
 
 
 class State(TypedDict, total=False):
@@ -20,8 +22,9 @@ class State(TypedDict, total=False):
 
 
 def mcp_test_results(state: State) -> dict:
+
     print(">>> entering mcp_test_results")
-    result = mcp_test_executer()
+    result = mcp.run_tool("run_api_sanity_tests")
     print(">>> MCP test execution result: %s", result)
 
     parsed = parse_mcp_result(result["test_results"])
@@ -71,11 +74,25 @@ def analyze_failure(state: State) -> FailureAnalysis | None:
 ### Query SQL DB for data issues
 def mcp_query_sql(state: State) -> dict:
     print(">>> entering mcp query sql tool")
-    result = mcp_test_executer()
+    result = mcp.run_tool("mcp_query_sql")
     print(">>> MCP test execution result: %s", result)
     print("Querying SQL database for data issues...")
     return {"data_issue_found": True, "details": "Missing user record in DB."}
 
+### Check Auth issues
+def check_auth(state: State) -> dict:
+    print("Checking authentication issues...")    
+    return {"auth_issue_found": True, "details": "Invalid API token."}
+
+### Check Service issues
+def check_service(state: State) -> dict:
+    print("Checking service availability...")    
+    return {"service_issue_found": True, "details": "Service returned 503 error."}
+
+### Human service node
+def human_service(state: State) -> dict:
+    print("Routing to human for further analysis and fix...")    
+    return {"human_intervention": True, "details": "Please investigate the issue."}
 
 def route_after_analysis(state: State) -> str:
     category = state["category"]
@@ -90,14 +107,30 @@ def route_after_analysis(state: State) -> str:
         return "human-service"  # human fix
     return "human-service"  # default to human fix
     
+
 ### Api test execution node
 workflow = StateGraph(state_schema=State)
 workflow.add_node("mcp-run-test", mcp_test_results)
 workflow.add_node("analyze-failure", analyze_failure)
 workflow.add_node("mcp-query-sql", mcp_query_sql)
+workflow.add_node("check-auth", check_auth)
+workflow.add_node("check-service", check_service)
+workflow.add_node("human-service", human_service)
+
 
 workflow.set_entry_point("mcp-run-test")
-workflow.set_finish_point("mcp-run-test")
+workflow.add_edge("mcp-run-test", "analyze-failure")
+
+workflow.add_conditional_edges(
+    "analyze-failure",
+    route_after_analysis,
+)
+
+workflow.set_finish_point("mcp-query-sql")
+workflow.set_finish_point("check-auth")
+workflow.set_finish_point("check-service")
+workflow.set_finish_point("human-service")
+
 compiled = workflow.compile()
 
 # Execute workflow from START
