@@ -65,6 +65,18 @@ def run_maven_tests():
     return response  # Optional, FastMCP may use this internally
 
 
+@mcp.tool(name="mcp_query_sql")
+def mcp_test_executer():
+    import sqlite3
+    # Connect to the SQLite database (or any other DB)
+    conn = sqlite3.connect('llm_data.db')
+    cursor = conn.cursor()
+    # Example query to check for data issues
+    result = cursor.execute("SELECT COUNT(*) FROM planet WHERE name LIKE 'sa%';")
+    conn.close()
+    return result
+
+
 # Start the MCP server
 if __name__ == "__main__":
     mcp.run(transport="stdio")
