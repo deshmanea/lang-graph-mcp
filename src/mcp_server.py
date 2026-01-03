@@ -50,28 +50,20 @@ def run_maven_tests():
         # Prepare the response
         response = {
             "return_code": result.returncode,
-            "api_result": extract_api_result(result.stdout),
+            "test_result": clean_stdout,
             "stderr": result.stderr,
-            "raw_logs": clean_stdout
+
         }
 
     except Exception as e:
         response = {
             "return_code": -1,
-            "api_result": None,
+            "test_result": None,
             "stderr": str(e),
-            "raw_logs": clean_stdout
         }
 
     return response  # Optional, FastMCP may use this internally
 
-def extract_api_result(stdout: str) -> dict | None:
-    for line in stdout.splitlines():
-        if line.startswith("API_RESULT::"):
-            payload = line[len("API_RESULT::"):]
-            return json.loads(payload)
-
-    return None
 
 # Start the MCP server
 if __name__ == "__main__":
