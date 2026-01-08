@@ -6,6 +6,7 @@ from utils import parse_mcp_result
 from langchain_ollama import ChatOllama
 from analysis_category import FailureAnalysis
 from mcp_client import MCPClient
+from constant import Constants
 
 mcp = MCPClient()
 
@@ -27,7 +28,7 @@ def mcp_test_results(state: State) -> dict:
     result = mcp.run_tool("run_api_sanity_tests")
     print(">>> MCP test execution result: %s", result)
 
-    parsed = parse_mcp_result(result["test_results"])
+    parsed = parse_mcp_result(result)
 
     return {
         "return_code": parsed["return_code"],
@@ -38,10 +39,21 @@ def mcp_test_results(state: State) -> dict:
 
 ### Anyalyze test results
 def analyze_failure(state: State) -> FailureAnalysis | None:
-    if run_test_node["return_code"] != 0:
+    if state["return_code"] == 0:
+        print("There is no test failure reported !!")
+        return{
+            "test_name": "Batch",
+            "failure": "No",
+            "category": "Passed",
+            "analysis": "N/A",
+            "possible_fix": "N/A",
+        }
+
+
+    else:
 
         model = ChatOllama(
-            model="qwen3:latest",
+            model=Constants.MODEL_NAME,
             validate_model_on_init=True,
             temperature=0.0,
         )
@@ -59,16 +71,28 @@ def analyze_failure(state: State) -> FailureAnalysis | None:
         - Base your decision on error patterns
         - Do not speculate beyond logs
 
-        Here are the test results: {run_test_node["test_result"]}"""
+        Here are the test results: {state["test_result"]}"""
         llm_response = structured_model.invoke(prompt)
         print('=' * 60)
         print(llm_response)
+
+        print("RAW LLM OUTPUT:")
+        print(llm_response["raw"].content)
+
+        print("PARSING ERROR:")
+        print(llm_response["parsing_error"])
+
+        parsed: FailureAnalysis | None = llm_response["parsed"]
+
+        if parsed is None:
+            raise ValueError(f"LLM parsing failed: {llm_response['parsing_error']}")
+
         return{
-            "test_name": llm_response.test_name,
-            "failure": llm_response.failure,
-            "category": llm_response.category,
-            "analysis": llm_response.analysis,
-            "possible_fix": llm_response.possible_fix,
+            "test_name": parsed.test_name,
+            "failure": parsed.failure,
+            "category": parsed.category,
+            "analysis": parsed.analysis,
+            "possible_fix": parsed.possible_fix,
         }
 
 ### Query SQL DB for data issues
@@ -94,18 +118,31 @@ def human_service(state: State) -> dict:
     print("Routing to human for further analysis and fix...")    
     return {"human_intervention": True, "details": "Please investigate the issue."}
 
-def route_after_analysis(state: State) -> str:
-    category = state["category"]
+### Test service node
+def test_service(state: State) -> dict:
+    with open(Constants.TEST_DATA_PATH, 'w') as f:
+        f.write('saturn')
+        
 
-    if category == "DATA_ISSUE":
-        return "mcp-query-sql"
-    if category == "AUTH_ISSUE":
-        return "check-auth"
-    if category == "SERVICE_UNAVAILABLE":
-        return "check-service"
-    if category == "ASSERTION_MISMATCH":
-        return "human-service"  # human fix
-    return "human-service"  # default to human fix
+
+def route_after_analysis(state: State) -> str:
+    if "category" not in state:
+        print("Test return code 0")
+    else:
+        category = state["category"]
+
+        if category == "TEST_BUG":
+            return "test-service"
+        if category == "DATA_ISSUE":
+            return "mcp-query-sql"
+        if category == "AUTH_ISSUE":
+            return "check-auth"
+        if category == "SERVICE_UNAVAILABLE":
+            return "check-service"
+        if category == "ASSERTION_MISMATCH":
+            return "human-service"  # human fix
+        return "human-service"  # default to human fix
+    
     
 
 ### Api test execution node
@@ -116,6 +153,8 @@ workflow.add_node("mcp-query-sql", mcp_query_sql)
 workflow.add_node("check-auth", check_auth)
 workflow.add_node("check-service", check_service)
 workflow.add_node("human-service", human_service)
+workflow.add_node("test-service", test_service)
+
 
 
 workflow.set_entry_point("mcp-run-test")

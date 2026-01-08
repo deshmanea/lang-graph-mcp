@@ -1,9 +1,9 @@
 import sys
 import traceback
 import subprocess
-import json
 from pathlib import Path
 import re
+from constant import Constants
 
 ANSI_ESCAPE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
 
@@ -18,10 +18,10 @@ except Exception as e:
     sys.exit(1)
 
 # Initialize MCP server
-mcp = FastMCP("run-api-test-server")
+mcp = FastMCP(Constants.MCP_SERVER_NAME)
 
 # Path to your Java project
-PROJECT_DIR = Path("/home/abhijit/IdeaProjects/api-tests")
+PROJECT_DIR = Path(Constants.AUTOMATION_PROJECT_PATH)
 
 @mcp.tool(name="run_api_sanity_tests")
 def run_maven_tests():
