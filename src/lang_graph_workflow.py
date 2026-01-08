@@ -122,7 +122,7 @@ def human_service(state: State) -> dict:
 def test_service(state: State) -> dict:
     with open(Constants.TEST_DATA_PATH, 'w') as f:
         f.write('saturn')
-        
+        print("Updated test data!!")     
 
 
 def route_after_analysis(state: State) -> str:
@@ -143,7 +143,6 @@ def route_after_analysis(state: State) -> str:
             return "human-service"  # human fix
         return "human-service"  # default to human fix
     
-    
 
 ### Api test execution node
 workflow = StateGraph(state_schema=State)
@@ -154,8 +153,6 @@ workflow.add_node("check-auth", check_auth)
 workflow.add_node("check-service", check_service)
 workflow.add_node("human-service", human_service)
 workflow.add_node("test-service", test_service)
-
-
 
 workflow.set_entry_point("mcp-run-test")
 workflow.add_edge("mcp-run-test", "analyze-failure")
